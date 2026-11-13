@@ -1,0 +1,32 @@
+name: Build CRM Windows EXE
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "CRMWindows/**"
+      - ".github/workflows/build_crm_windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Windows EXE
+        shell: powershell
+        run: .\CRMWindows\build.ps1
+
+      - name: Run core self-test
+        shell: powershell
+        run: |
+          $process = Start-Process -FilePath ".\CRMWindows\dist\PrivateCRM-Windows.exe" -ArgumentList "--self-test" -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Self-test failed with exit code $($process.ExitCode)" }
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrivateCRM-Windows
+          path: CRMWindows/dist/PrivateCRM-Windows.exe
+          retention-days: 30

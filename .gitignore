@@ -1,0 +1,33 @@
+# Local IDE / agent state
+.claude/settings.local.json
+.taste-skill/
+
+# Build products
+**/dist/
+**/bin/
+**/obj/
+*.exe
+*.ipa
+*.app
+
+# CRM local databases and backups
+crm_data*.json
+auto_import_config.json
+customers_v2.json
+batches_v2.json
+settings.json
+CRMBackup_*.json
+*.bak
+
+# Personal source spreadsheets and exports
+*.xlsx
+*.xls
+*.csv
+*.tsv
+
+# Local temporary/runtime folders
+Lib/
+Scripts/
+output/
+tmp/
+项目文档/
