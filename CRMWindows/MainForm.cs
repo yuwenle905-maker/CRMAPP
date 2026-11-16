@@ -807,8 +807,9 @@ namespace CRMWindows
             }
             else if (key == "funnel")
             {
-                title = "伪装销售漏斗"; hint = "依次填写：派发资料数, 新单数, 二次数";
-                current = DisguiseValue("leads", "0") + ", " + DisguiseValue("neworders", "0") + ", " + DisguiseValue("secondorders", "0");
+                PeriodStats stats = StatisticsEngine.Summary(store.Data.customers, !cumulative.Checked, (int)year.Value, month.SelectedIndex + 1);
+                title = "伪装销售漏斗"; hint = "依次填写：派发数, 新单数, 新单业绩, 二次数, 二次业绩";
+                current = DisguiseValue("leads", stats.Leads.ToString()) + ", " + DisguiseValue("neworders", stats.NewCustomers.ToString()) + ", " + DisguiseValue("newamount", stats.NewAmount.ToString("0")) + ", " + DisguiseValue("secondorders", stats.SecondOrders.ToString()) + ", " + DisguiseValue("secondamount", stats.SecondAmount.ToString("0"));
             }
             else if (key == "roi" || key == "cost" || key == "revenue" || key == "newrate")
             {
@@ -821,26 +822,38 @@ namespace CRMWindows
             if (!PromptDisguiseValue(title, hint, current, out entered)) return true;
             if (entered.Length == 0)
             {
-                string[] resetKeys = key == "followup" ? new string[] { "recentPending", "pendingNew", "pendingSecond" } : key == "funnel" ? new string[] { "leads", "neworders", "secondorders" } : new string[] { key };
+                string[] resetKeys = key == "followup" ? new string[] { "recentPending", "pendingNew", "pendingSecond" } : key == "funnel" ? new string[] { "leads", "neworders", "newamount", "secondorders", "secondamount" } : new string[] { key };
                 foreach (string resetKey in resetKeys) values.Remove(resetKey);
                 store.Save(); RefreshAll(); return true;
             }
             string[] parts = entered.Split(new char[] { ',', '，' }, StringSplitOptions.RemoveEmptyEntries);
-            if (key == "followup" || key == "funnel")
+            if (key == "followup")
             {
                 if (parts.Length != 3 || parts.Any(delegate(string part) { int number; return !Int32.TryParse(part.Trim(), out number) || number < 0; }))
                 {
                     MessageBox.Show("请填写 3 个非负整数，并用逗号分隔。", "格式不正确", MessageBoxButtons.OK, MessageBoxIcon.Warning); return true;
                 }
-                string[] keys = key == "followup" ? new string[] { "recentPending", "pendingNew", "pendingSecond" } : new string[] { "leads", "neworders", "secondorders" };
+                string[] keys = new string[] { "recentPending", "pendingNew", "pendingSecond" };
                 for (int i = 0; i < 3; i++) values[keys[i]] = parts[i].Trim();
+            }
+            else if (key == "funnel")
+            {
+                if (parts.Length != 5 || parts.Any(delegate(string part) { double number; return !Double.TryParse(part.Trim().Replace("¥", "").Replace("￥", "").Replace(",", ""), NumberStyles.Any, CultureInfo.InvariantCulture, out number) || number < 0; }))
+                {
+                    MessageBox.Show("请填写 5 个非负数值，并用逗号分隔。", "格式不正确", MessageBoxButtons.OK, MessageBoxIcon.Warning); return true;
+                }
+                string[] keys = new string[] { "leads", "neworders", "newamount", "secondorders", "secondamount" };
+                for (int i = 0; i < 5; i++) values[keys[i]] = parts[i].Trim().Replace("¥", "").Replace("￥", "");
+                double newAmount = ParseDisplayNumber(parts[2]), secondAmount = ParseDisplayNumber(parts[4]);
+                PeriodStats stats = StatisticsEngine.Summary(store.Data.customers, !cumulative.Checked, (int)year.Value, month.SelectedIndex + 1);
+                double otherAmount = Math.Max(0, stats.Revenue - stats.NewAmount - stats.SecondAmount);
+                values["revenue"] = (newAmount + secondAmount + otherAmount).ToString("0"); values.Remove("roi"); values.Remove("newrate");
             }
             else
             {
                 values[key] = entered.Trim();
                 if (key == "cost" || key == "revenue") values.Remove("roi");
             }
-            if (key == "funnel") values.Remove("newrate");
             store.Save(); RefreshAll();
             return true;
         }
