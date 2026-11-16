@@ -288,22 +288,31 @@ namespace CRMWindows
         {
             canvas.SuspendLayout(); canvas.Controls.Clear(); PeriodStats s = StatisticsEngine.Summary(customers, monthly, year, month);
             Func<string, string, string> shown = delegate(string key, string fallback) { string value; return settings.demoEnabled && settings.disguiseDisplayValues != null && settings.disguiseDisplayValues.TryGetValue(key, out value) ? value : fallback; };
+            double displayRevenue = DisplayNumber(shown("revenue", ""), s.Revenue);
+            double displayCost = DisplayNumber(shown("cost", ""), s.Cost);
+            double revenueScale = s.Revenue > 0 ? displayRevenue / s.Revenue : 1;
+            double costScale = s.Cost > 0 ? displayCost / s.Cost : 1;
+            double displayFunnelRevenue = s.FunnelRevenue * revenueScale;
+            double displayOtherRevenue = Math.Max(0, displayRevenue - displayFunnelRevenue);
             int width = Math.Max(900, ClientSize.Width - 70); HeroDashboardCard hero = new HeroDashboardCard { Width = width, Height = 100, PeriodTitle = monthly ? year + "年" + month + "月经营概览" : "累计经营概览", Subtitle = "成本按资料录入日期 · 营业额按开单日期 · 数据实时更新" }; canvas.Controls.Add(hero); Break();
             int metricWidth = (width - 80) / 4;
-            AddNavigable(new MetricDashboardCard { Width = metricWidth, Height = 148, Title = "ROI", Value = hideRoi ? "—" : shown("roi", s.Roi.ToString("0.00")), Note = "漏斗业绩 ÷ 获客成本", Accent = DashboardPalette.Blue, Symbol = "↗" }, "roi");
+            AddNavigable(new MetricDashboardCard { Width = metricWidth, Height = 148, Title = "ROI", Value = hideRoi ? "—" : shown("roi", displayCost > 0 ? (displayFunnelRevenue / displayCost).ToString("0.00") : "—"), Note = "漏斗业绩 ÷ 获客成本", Accent = DashboardPalette.Blue, Symbol = "↗" }, "roi");
             AddNavigable(new MetricDashboardCard { Width = metricWidth, Height = 148, Title = "资料成本", Value = hideCost ? "—" : shown("cost", DrawUtil.Money(s.Cost)), Note = shown("leads", s.Leads.ToString()) + " 份资料", Accent = DashboardPalette.Orange, Symbol = "¥" }, "cost");
-            AddNavigable(new MetricDashboardCard { Width = metricWidth, Height = 148, Title = "营业额", Value = hideRevenue ? "—" : shown("revenue", DrawUtil.Money(s.Revenue)), Note = "漏斗 " + (hideRevenue ? "—" : DrawUtil.Money(s.FunnelRevenue)) + " + 其他 " + (hideRevenue ? "—" : DrawUtil.Money(s.OtherRevenue)), Accent = DashboardPalette.Indigo, Symbol = "▤" }, "revenue");
-            AddNavigable(new MetricDashboardCard { Width = metricWidth, Height = 148, Title = "新单成交率", Value = shown("newrate", s.Leads > 0 ? ((double)s.NewCustomers / s.Leads).ToString("P1") : "—"), Note = shown("neworders", s.NewCustomers.ToString()) + " / " + shown("leads", s.Leads.ToString()) + " 位客户", Accent = DashboardPalette.Green, Symbol = "✓" }, "newrate"); Break();
+            AddNavigable(new MetricDashboardCard { Width = metricWidth, Height = 148, Title = "营业额", Value = hideRevenue ? "—" : shown("revenue", DrawUtil.Money(s.Revenue)), Note = "漏斗 " + (hideRevenue ? "—" : DrawUtil.Money(displayFunnelRevenue)) + " + 其他 " + (hideRevenue ? "—" : DrawUtil.Money(displayOtherRevenue)), Accent = DashboardPalette.Indigo, Symbol = "▤" }, "revenue");
+            int shownLeads, shownNewOrders; Int32.TryParse(shown("leads", s.Leads.ToString()), out shownLeads); Int32.TryParse(shown("neworders", s.NewCustomers.ToString()), out shownNewOrders);
+            AddNavigable(new MetricDashboardCard { Width = metricWidth, Height = 148, Title = "新单成交率", Value = shown("newrate", shownLeads > 0 ? ((double)shownNewOrders / shownLeads).ToString("P1") : "—"), Note = shownNewOrders + " / " + shownLeads + " 位客户", Accent = DashboardPalette.Green, Symbol = "✓" }, "newrate"); Break();
             int half = (width - 40) / 2; DateTime cutoff = DateTime.Now.AddDays(-15);
             int recent = customers.Count(delegate(Customer c) { return c.dataType == "fullCustomer" && c.costEnabled && c.importDate >= cutoff && !c.ValidConversions.Exists(delegate(ConversionRecord r) { return r.type == "新单"; }); });
             int pendingNew = customers.Count(delegate(Customer c) { return c.dataType == "fullCustomer" && c.costEnabled && !c.ValidConversions.Exists(delegate(ConversionRecord r) { return r.type == "新单"; }); });
             int pendingSecond = customers.Count(delegate(Customer c) { return c.ValidConversions.Exists(delegate(ConversionRecord r) { return r.type == "新单"; }) && !c.ValidConversions.Exists(delegate(ConversionRecord r) { return r.type == "二次"; }) && !settings.dismissedPendingSecondCustomerIDs.Contains(c.id); });
             int parsed; Func<string, int, int> shownInt = delegate(string key, int fallback) { return Int32.TryParse(shown(key, fallback.ToString()), out parsed) ? parsed : fallback; };
             AddNavigable(new FollowUpDashboardCard { Width = half, Height = 294, RecentPending = shownInt("recentPending", recent), NewPending = shownInt("pendingNew", pendingNew), SecondPending = shownInt("pendingSecond", pendingSecond) }, "followup");
-            AddNavigable(new FunnelDashboardCard { Width = half, Height = 294, Leads = shownInt("leads", s.Leads), NewOrders = shownInt("neworders", s.NewCustomers), SecondOrders = shownInt("secondorders", s.SecondOrders), NewAmount = s.NewAmount, SecondAmount = s.SecondAmount, HideRevenue = hideRevenue }, "funnel"); Break();
+            AddNavigable(new FunnelDashboardCard { Width = half, Height = 294, Leads = shownInt("leads", s.Leads), NewOrders = shownInt("neworders", s.NewCustomers), SecondOrders = shownInt("secondorders", s.SecondOrders), NewAmount = s.NewAmount * revenueScale, SecondAmount = s.SecondAmount * revenueScale, HideRevenue = hideRevenue }, "funnel"); Break();
             List<DailyAuditRow> days = DailyRows(customers, monthly, year, month); int dailyHeight = Math.Max(155, 88 + Math.Min(6, days.Count) * 62);
+            if (settings.demoEnabled) foreach (DailyAuditRow day in days) { day.Cost *= costScale; day.Revenue *= revenueScale; }
             AddNavigable(new DailyAuditDashboardCard { Width = half, Height = dailyHeight, Rows = days, HideCost = hideCost, HideRevenue = hideRevenue }, "daily");
-            ChannelOverviewDashboardCard channelCard = new ChannelOverviewDashboardCard { Width = half, Height = dailyHeight, Rows = StatisticsEngine.Channels(customers, monthly, year, month), HideRevenue = hideRevenue, Cursor = Cursors.Hand };
+            List<ChannelStat> channelRows = StatisticsEngine.Channels(customers, monthly, year, month); if (settings.demoEnabled) foreach (ChannelStat row in channelRows) row.Revenue *= revenueScale;
+            ChannelOverviewDashboardCard channelCard = new ChannelOverviewDashboardCard { Width = half, Height = dailyHeight, Rows = channelRows, HideRevenue = hideRevenue, Cursor = Cursors.Hand };
             channelCard.ChannelClicked += delegate(string channel) { if (Navigate != null) Navigate("channel:" + channel); };
             canvas.Controls.Add(channelCard);
             canvas.ResumeLayout(); ResizeCards();
@@ -327,6 +336,12 @@ namespace CRMWindows
             return map.Values.OrderByDescending(delegate(DailyAuditRow x) { return x.Date; }).ToList();
         }
         private void Break() { canvas.SetFlowBreak(canvas.Controls[canvas.Controls.Count - 1], true); }
+        private static double DisplayNumber(string text, double fallback)
+        {
+            if (String.IsNullOrWhiteSpace(text)) return fallback;
+            string normalized = text.Replace("¥", "").Replace("￥", "").Replace(",", "").Trim();
+            double value; return Double.TryParse(normalized, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out value) && value >= 0 ? value : fallback;
+        }
         private void AddNavigable(Control card, string key) { card.Cursor = Cursors.Hand; card.Click += delegate { if (Navigate != null) Navigate(key); }; canvas.Controls.Add(card); }
         private void ResizeCards()
         {

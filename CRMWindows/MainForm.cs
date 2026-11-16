@@ -737,8 +737,43 @@ namespace CRMWindows
                 if (!store.IsDisguiseActive || e.RowIndex < 0 || e.ColumnIndex < identityColumns) return;
                 string key = DisguiseGridKey(grid, scope, e.RowIndex, e.ColumnIndex, identityColumns);
                 store.Data.settings.disguiseDisplayValues[key] = Convert.ToString(grid.Rows[e.RowIndex].Cells[e.ColumnIndex].Value);
+                RecalculateDisguiseRow(grid, scope, e.RowIndex, identityColumns, e.ColumnIndex);
                 store.Save();
             };
+        }
+
+        private void RecalculateDisguiseRow(DataGridView grid, string scope, int rowIndex, int identityColumns, int changedColumn)
+        {
+            DataGridViewRow row = grid.Rows[rowIndex];
+            if (scope == "analytics.roi" && (grid.Columns[changedColumn].Name == "派发成本" || grid.Columns[changedColumn].Name == "漏斗业绩"))
+            {
+                double cost = ParseDisplayNumber(row.Cells["派发成本"].Value), revenue = ParseDisplayNumber(row.Cells["漏斗业绩"].Value);
+                string roi = cost > 0 ? (revenue / cost).ToString("0.00") : "—"; string status = cost <= 0 ? "暂无成本" : (revenue >= cost ? "盈利" : "亏损");
+                row.Cells["ROI"].Value = roi; row.Cells["盈亏状态"].Value = status;
+                store.Data.settings.disguiseDisplayValues[DisguiseGridKey(grid, scope, rowIndex, grid.Columns["ROI"].Index, identityColumns)] = roi;
+                store.Data.settings.disguiseDisplayValues[DisguiseGridKey(grid, scope, rowIndex, grid.Columns["盈亏状态"].Index, identityColumns)] = status;
+            }
+            else if (scope == "advisors.stats")
+            {
+                int leads = (int)ParseDisplayNumber(row.Cells["派发"].Value), newOrders = (int)ParseDisplayNumber(row.Cells["新单"].Value);
+                double revenue = ParseDisplayNumber(row.Cells["业绩"].Value);
+                if (grid.Columns[changedColumn].Name == "派发" || grid.Columns[changedColumn].Name == "新单")
+                {
+                    string rate = leads > 0 ? ((double)newOrders / leads).ToString("P0") : "—"; row.Cells["成交率"].Value = rate;
+                    store.Data.settings.disguiseDisplayValues[DisguiseGridKey(grid, scope, rowIndex, grid.Columns["成交率"].Index, identityColumns)] = rate;
+                }
+                if (grid.Columns[changedColumn].Name == "派发" || grid.Columns[changedColumn].Name == "业绩")
+                {
+                    double cost = leads * store.Data.settings.leadUnitPrice; string roi = cost > 0 ? (revenue / cost).ToString("0.00") : "—"; row.Cells["ROI"].Value = roi;
+                    store.Data.settings.disguiseDisplayValues[DisguiseGridKey(grid, scope, rowIndex, grid.Columns["ROI"].Index, identityColumns)] = roi;
+                }
+            }
+        }
+
+        private static double ParseDisplayNumber(object raw)
+        {
+            string text = Convert.ToString(raw).Replace("¥", "").Replace("￥", "").Replace(",", "").Replace("%", "").Trim();
+            double value; return Double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out value) ? value : 0;
         }
 
         private void ApplyDisguiseGridOverrides(DataGridView grid, string scope, int identityColumns)
@@ -800,7 +835,12 @@ namespace CRMWindows
                 string[] keys = key == "followup" ? new string[] { "recentPending", "pendingNew", "pendingSecond" } : new string[] { "leads", "neworders", "secondorders" };
                 for (int i = 0; i < 3; i++) values[keys[i]] = parts[i].Trim();
             }
-            else values[key] = entered.Trim();
+            else
+            {
+                values[key] = entered.Trim();
+                if (key == "cost" || key == "revenue") values.Remove("roi");
+            }
+            if (key == "funnel") values.Remove("newrate");
             store.Save(); RefreshAll();
             return true;
         }
