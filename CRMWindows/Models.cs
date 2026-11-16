@@ -118,6 +118,7 @@ namespace CRMWindows
         public bool demoEnabled { get; set; }
         public List<string> hiddenMetrics { get; set; }
         public List<string> inactiveAdvisors { get; set; }
+        public Dictionary<string, string> disguiseDisplayValues { get; set; }
 
         public AppSettings()
         {
@@ -126,6 +127,7 @@ namespace CRMWindows
             advisorProfiles = new List<AdvisorProfile>(); dismissedPendingSecondCustomerIDs = new List<string>();
             channelRevenueVisible = true; hiddenMetrics = new List<string>();
             inactiveAdvisors = new List<string>();
+            disguiseDisplayValues = new Dictionary<string, string>();
         }
     }
 

@@ -265,6 +265,9 @@ namespace CRMWindows
             TabPage page = Page("分析"); page.Padding = new Padding(0);
             analyticsCanvas = new BufferedFlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(22), BackColor = CrmTheme.Ground };
             roiGrid = MakeGrid(); channelGrid = MakeGrid(); regionGrid = MakeGrid(); roiGrid.CellFormatting += FormatRoiCell;
+            AttachDisguiseGridEditor(roiGrid, "analytics.roi", 1);
+            AttachDisguiseGridEditor(channelGrid, "analytics.channel", 1);
+            AttachDisguiseGridEditor(regionGrid, "analytics.profile", 2);
             analyticsCanvas.Controls.Add(AnalyticsSection("近六个月 ROI 对比", roiGrid, 205));
             analyticsCanvas.Controls.Add(AnalyticsSection("渠道漏斗分析", channelGrid, 240));
             analyticsCanvas.Controls.Add(AnalyticsSection("地域 / 年龄 / 线索金额画像", regionGrid, 520));
@@ -292,6 +295,7 @@ namespace CRMWindows
         {
             TabPage page = Page("顾问"); SplitContainer split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 390, BackColor = CrmTheme.Ground, SplitterWidth = 10 };
             advisorGrid = MakeGrid(); profileGrid = MakeGrid();
+            AttachDisguiseGridEditor(advisorGrid, "advisors.stats", 3);
             Panel profileTools = new Panel { Dock = DockStyle.Top, Height = 54, BackColor = CrmTheme.Surface };
             Button add = MakeButton("新增顾问", CrmTheme.Coral); add.Location = new Point(16, 9); add.Click += delegate { EditAdvisor(null); };
             Button edit = MakeButton("编辑角色 / 小组", CrmTheme.Blue); edit.Location = new Point(120, 9); edit.Click += delegate { EditSelectedAdvisor(); };
@@ -654,6 +658,9 @@ namespace CRMWindows
             DataTable profile = new DataTable(); profile.Columns.Add("分类"); profile.Columns.Add("项目"); profile.Columns.Add("人数"); profile.Columns.Add("占比"); int total = regions.Values.Sum(); foreach (var pair in regions.OrderByDescending(delegate(KeyValuePair<string, int> x) { return x.Value; })) profile.Rows.Add("地域", pair.Key, pair.Value, total > 0 ? ((double)pair.Value / total).ToString("P1") : "—");
             AddBands(profile, "年龄", store.Data.customers.Where(delegate(Customer c) { return c.age.HasValue; }).Select(delegate(Customer c) { return (double)c.age.Value; }).ToList(), new double[] { 0, 20, 30, 40, 121 }, new string[] { "20岁以下", "20-29岁", "30-39岁", "40岁以上" });
             AddBands(profile, "线索金额", store.Data.customers.Where(delegate(Customer c) { return c.leadAmount.HasValue; }).Select(delegate(Customer c) { return c.leadAmount.Value; }).ToList(), new double[] { 0, 301, 501, Double.MaxValue }, new string[] { "300元以内", "301-500元", "500元以上" }); regionGrid.DataSource = profile;
+            ApplyDisguiseGridOverrides(roiGrid, "analytics.roi", 1);
+            ApplyDisguiseGridOverrides(channelGrid, "analytics.channel", 1);
+            ApplyDisguiseGridOverrides(regionGrid, "analytics.profile", 2);
             SetAnalysisHeight(roiGrid, roi.Rows.Count);
             SetAnalysisHeight(channelGrid, ch.Rows.Count);
             SetAnalysisHeight(regionGrid, profile.Rows.Count);
@@ -708,6 +715,7 @@ namespace CRMWindows
                 AddAdvisorRow(dt, s, store.Data.settings.advisorProfiles.Find(delegate(AdvisorProfile p) { return p.name == s.Name; }) ?? new AdvisorProfile { name = s.Name });
             foreach (AdvisorStat s in stats.Where(delegate(AdvisorStat s) { return s.IsInactive; })) AddAdvisorRow(dt, s, new AdvisorProfile { name = s.Name, role = "已离职", groupName = "历史顾问" });
             advisorGrid.DataSource = dt;
+            ApplyDisguiseGridOverrides(advisorGrid, "advisors.stats", 3);
             foreach (DataGridViewRow row in advisorGrid.Rows) if (Convert.ToString(row.Cells["角色"].Value) == "小组合计") { row.DefaultCellStyle.BackColor = Color.FromArgb(232, 239, 253); row.DefaultCellStyle.Font = CrmTheme.Font(9F, FontStyle.Bold); row.DividerHeight = 2; }
             DataTable profiles = new DataTable(); profiles.Columns.Add("顾问"); profiles.Columns.Add("角色"); profiles.Columns.Add("小组"); foreach (AdvisorProfile p in store.Data.settings.advisorProfiles) profiles.Rows.Add(p.name, p.role, String.IsNullOrWhiteSpace(p.groupName) ? "未分组" : p.groupName); profileGrid.DataSource = profiles;
         }
@@ -717,8 +725,111 @@ namespace CRMWindows
             dt.Rows.Add(s.IsInactive ? "历史顾问" : (String.IsNullOrWhiteSpace(p.groupName) ? "未分组" : p.groupName), s.IsInactive ? "已离职" : p.role, s.Name, s.Leads, s.NewOrders, s.Leads > 0 ? ((double)s.NewOrders / s.Leads).ToString("P0") : "—", s.Seconds, Hidden("revenue") ? "—" : Money(s.Revenue), Hidden("roi") ? "—" : (s.Cost > 0 ? s.Roi.ToString("0.00") : "—"), s.Pending);
         }
 
+        private void AttachDisguiseGridEditor(DataGridView grid, string scope, int identityColumns)
+        {
+            grid.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e)
+            {
+                if (!store.IsDisguiseActive || e.RowIndex < 0 || e.ColumnIndex < identityColumns) return;
+                grid.CurrentCell = grid.Rows[e.RowIndex].Cells[e.ColumnIndex]; grid.BeginEdit(true);
+            };
+            grid.CellEndEdit += delegate(object sender, DataGridViewCellEventArgs e)
+            {
+                if (!store.IsDisguiseActive || e.RowIndex < 0 || e.ColumnIndex < identityColumns) return;
+                string key = DisguiseGridKey(grid, scope, e.RowIndex, e.ColumnIndex, identityColumns);
+                store.Data.settings.disguiseDisplayValues[key] = Convert.ToString(grid.Rows[e.RowIndex].Cells[e.ColumnIndex].Value);
+                store.Save();
+            };
+        }
+
+        private void ApplyDisguiseGridOverrides(DataGridView grid, string scope, int identityColumns)
+        {
+            grid.ReadOnly = !store.IsDisguiseActive;
+            foreach (DataGridViewColumn column in grid.Columns) column.ReadOnly = !store.IsDisguiseActive || column.Index < identityColumns;
+            if (!store.IsDisguiseActive) return;
+            for (int row = 0; row < grid.Rows.Count; row++)
+                for (int column = identityColumns; column < grid.Columns.Count; column++)
+                {
+                    string key = DisguiseGridKey(grid, scope, row, column, identityColumns); string value;
+                    if (store.Data.settings.disguiseDisplayValues.TryGetValue(key, out value)) grid.Rows[row].Cells[column].Value = value;
+                }
+        }
+
+        private static string DisguiseGridKey(DataGridView grid, string scope, int rowIndex, int columnIndex, int identityColumns)
+        {
+            List<string> identity = new List<string>();
+            for (int i = 0; i < identityColumns; i++) identity.Add(Convert.ToString(grid.Rows[rowIndex].Cells[i].Value).Replace("|", "／"));
+            return "grid|" + scope + "|" + String.Join("|", identity.ToArray()) + "|" + grid.Columns[columnIndex].Name;
+        }
+
+        private bool ShowDisguiseValueEditor(string key)
+        {
+            Dictionary<string, string> values = store.Data.settings.disguiseDisplayValues;
+            string title, hint, current;
+            if (key == "followup")
+            {
+                title = "伪装待跟进人数"; hint = "依次填写：15天未成交, 暂未成交新单, 暂未成交二次";
+                current = DisguiseValue("recentPending", "0") + ", " + DisguiseValue("pendingNew", "0") + ", " + DisguiseValue("pendingSecond", "0");
+            }
+            else if (key == "funnel")
+            {
+                title = "伪装销售漏斗"; hint = "依次填写：派发资料数, 新单数, 二次数";
+                current = DisguiseValue("leads", "0") + ", " + DisguiseValue("neworders", "0") + ", " + DisguiseValue("secondorders", "0");
+            }
+            else if (key == "roi" || key == "cost" || key == "revenue" || key == "newrate")
+            {
+                title = "伪装显示值"; hint = "输入希望截图中显示的“" + (key == "roi" ? "ROI" : key == "cost" ? "资料成本" : key == "revenue" ? "营业额" : "新单成交率") + "”，例如 3.28、¥88,000 或 25.0%";
+                current = DisguiseValue(key, "");
+            }
+            else return false;
+
+            string entered;
+            if (!PromptDisguiseValue(title, hint, current, out entered)) return true;
+            if (entered.Length == 0)
+            {
+                string[] resetKeys = key == "followup" ? new string[] { "recentPending", "pendingNew", "pendingSecond" } : key == "funnel" ? new string[] { "leads", "neworders", "secondorders" } : new string[] { key };
+                foreach (string resetKey in resetKeys) values.Remove(resetKey);
+                store.Save(); RefreshAll(); return true;
+            }
+            string[] parts = entered.Split(new char[] { ',', '，' }, StringSplitOptions.RemoveEmptyEntries);
+            if (key == "followup" || key == "funnel")
+            {
+                if (parts.Length != 3 || parts.Any(delegate(string part) { int number; return !Int32.TryParse(part.Trim(), out number) || number < 0; }))
+                {
+                    MessageBox.Show("请填写 3 个非负整数，并用逗号分隔。", "格式不正确", MessageBoxButtons.OK, MessageBoxIcon.Warning); return true;
+                }
+                string[] keys = key == "followup" ? new string[] { "recentPending", "pendingNew", "pendingSecond" } : new string[] { "leads", "neworders", "secondorders" };
+                for (int i = 0; i < 3; i++) values[keys[i]] = parts[i].Trim();
+            }
+            else values[key] = entered.Trim();
+            store.Save(); RefreshAll();
+            return true;
+        }
+
+        private string DisguiseValue(string key, string fallback)
+        {
+            string value; return store.Data.settings.disguiseDisplayValues != null && store.Data.settings.disguiseDisplayValues.TryGetValue(key, out value) ? value : fallback;
+        }
+
+        private bool PromptDisguiseValue(string title, string hint, string current, out string value)
+        {
+            value = current;
+            using (Form form = new Form { Text = title, Width = 540, Height = 205, StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, BackColor = CrmTheme.Ground, Font = CrmTheme.Font(10F) })
+            {
+                Label info = new Label { Text = hint, Left = 24, Top = 22, Width = 480, Height = 42, ForeColor = CrmTheme.Text };
+                TextBox input = new TextBox { Left = 24, Top = 70, Width = 480, Height = 32, Text = current, BorderStyle = BorderStyle.FixedSingle };
+                Button ok = MakeButton("应用伪装值", CrmTheme.Lilac); ok.Left = 280; ok.Top = 116; ok.DialogResult = DialogResult.OK;
+                Button clear = MakeButton("恢复自动统计", CrmTheme.SurfaceSoft); clear.Left = 150; clear.Top = 116; clear.Click += delegate { input.Text = ""; form.DialogResult = DialogResult.OK; form.Close(); };
+                Button cancel = MakeButton("取消", CrmTheme.SurfaceSoft); cancel.Left = 410; cancel.Top = 116; cancel.Width = 90; cancel.DialogResult = DialogResult.Cancel;
+                form.Controls.AddRange(new Control[] { info, input, clear, ok, cancel }); form.AcceptButton = ok; form.CancelButton = cancel;
+                if (form.ShowDialog(this) != DialogResult.OK) return false;
+                value = input.Text.Trim();
+                return true;
+            }
+        }
+
         private void ShowDashboardDetail(string key)
         {
+            if (store.IsDisguiseActive && ShowDisguiseValueEditor(key)) return;
             int y = (int)year.Value, m = month.SelectedIndex + 1; bool monthly = !cumulative.Checked;
             DataTable dt = new DataTable(); dt.Columns.Add("客户编号"); dt.Columns.Add("日期"); dt.Columns.Add("类别"); dt.Columns.Add("客户"); dt.Columns.Add("归属顾问"); dt.Columns.Add("金额 / 状态"); dt.Columns.Add("快递单号"); dt.Columns.Add("客户ID"); dt.Columns.Add("订单ID");
             string title = "明细";

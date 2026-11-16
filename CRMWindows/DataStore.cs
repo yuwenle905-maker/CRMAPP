@@ -108,6 +108,7 @@ namespace CRMWindows
             if (Data.settings.dismissedPendingSecondCustomerIDs == null) Data.settings.dismissedPendingSecondCustomerIDs = new List<string>();
             if (Data.settings.hiddenMetrics == null) Data.settings.hiddenMetrics = new List<string>();
             if (Data.settings.inactiveAdvisors == null) Data.settings.inactiveAdvisors = new List<string>();
+            if (Data.settings.disguiseDisplayValues == null) Data.settings.disguiseDisplayValues = new Dictionary<string, string>();
             foreach (Customer c in Data.customers)
             {
                 if (String.IsNullOrEmpty(c.id)) c.id = Guid.NewGuid().ToString();
@@ -283,6 +284,11 @@ namespace CRMWindows
             if (d.TryGetValue("dismissedPendingSecondCustomerIDs", out v)) { s.dismissedPendingSecondCustomerIDs.Clear(); foreach (object x in AsList(v)) if (x != null) s.dismissedPendingSecondCustomerIDs.Add(x.ToString()); }
             if (d.TryGetValue("hiddenMetrics", out v)) { s.hiddenMetrics.Clear(); foreach (object x in AsList(v)) if (x != null) s.hiddenMetrics.Add(x.ToString()); }
             if (d.TryGetValue("inactiveAdvisors", out v)) { s.inactiveAdvisors.Clear(); foreach (object x in AsList(v)) if (x != null) s.inactiveAdvisors.Add(x.ToString()); }
+            if (d.TryGetValue("disguiseDisplayValues", out v) && AsDict(v) != null)
+            {
+                s.disguiseDisplayValues.Clear();
+                foreach (KeyValuePair<string, object> pair in AsDict(v)) if (pair.Value != null) s.disguiseDisplayValues[pair.Key] = pair.Value.ToString();
+            }
             return s;
         }
 
@@ -314,7 +320,7 @@ namespace CRMWindows
         private static Dictionary<string, object> WriteSettings(AppSettings s)
         {
             List<object> profiles = new List<object>(); foreach (AdvisorProfile p in s.advisorProfiles) profiles.Add(new Dictionary<string, object> { { "name", p.name }, { "role", p.role }, { "groupName", p.groupName } });
-            return new Dictionary<string, object> { { "leadUnitPrice", s.leadUnitPrice }, { "biometricLockEnabled", s.biometricLockEnabled }, { "appPINEnabled", s.appPINEnabled }, { "appPIN", s.appPIN }, { "advisors", s.advisors }, { "advisorGroups", s.advisorGroups }, { "advisorProfiles", profiles }, { "dismissedPendingSecondCustomerIDs", s.dismissedPendingSecondCustomerIDs }, { "channelRevenueVisible", s.channelRevenueVisible }, { "demoEnabled", s.demoEnabled }, { "hiddenMetrics", s.hiddenMetrics }, { "inactiveAdvisors", s.inactiveAdvisors } };
+            return new Dictionary<string, object> { { "leadUnitPrice", s.leadUnitPrice }, { "biometricLockEnabled", s.biometricLockEnabled }, { "appPINEnabled", s.appPINEnabled }, { "appPIN", s.appPIN }, { "advisors", s.advisors }, { "advisorGroups", s.advisorGroups }, { "advisorProfiles", profiles }, { "dismissedPendingSecondCustomerIDs", s.dismissedPendingSecondCustomerIDs }, { "channelRevenueVisible", s.channelRevenueVisible }, { "demoEnabled", s.demoEnabled }, { "hiddenMetrics", s.hiddenMetrics }, { "inactiveAdvisors", s.inactiveAdvisors }, { "disguiseDisplayValues", s.disguiseDisplayValues } };
         }
 
         private static Dictionary<string, object> AsDict(object value) { return value as Dictionary<string, object>; }
